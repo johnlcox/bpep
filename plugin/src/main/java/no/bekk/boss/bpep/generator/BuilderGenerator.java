@@ -21,17 +21,20 @@ import org.eclipse.text.edits.TextEdit;
 
 public class BuilderGenerator implements Generator {
 
-	public void generate(ICompilationUnit cu, boolean createBuilderConstructor, boolean formatSource, List<IField> fields) {
+	public void generate(ICompilationUnit cu, boolean createBuilderConstructor,
+			boolean formatSource, List<IField> fields, boolean addValidation) {
 		try {
 			IBuffer buffer = cu.getBuffer();
 			StringWriter sw = new StringWriter();
 			PrintWriter pw = new PrintWriter(sw);
+
 			pw.println();
 			pw.println("public static class Builder {");
 
 			IType clazz = cu.getTypes()[0];
 
-			int pos = clazz.getSourceRange().getOffset() + clazz.getSourceRange().getLength() - 1;
+			int pos = clazz.getSourceRange().getOffset()
+					+ clazz.getSourceRange().getLength() - 1;
 
 			createFieldDeclarations(pw, fields);
 
@@ -42,22 +45,28 @@ public class BuilderGenerator implements Generator {
 			} else {
 				createClassBuilderConstructor(pw, clazz, fields);
 				pw.println("}");
-				createClassConstructor(pw, clazz, fields);
+				createClassConstructor(pw, clazz, fields, addValidation);
 			}
-			
+
 			if (formatSource) {
 				buffer.replace(pos, 0, sw.toString());
 				String builderSource = buffer.getContents();
-			
-				TextEdit text = ToolFactory.createCodeFormatter(null).format(CodeFormatter.K_COMPILATION_UNIT, builderSource, 0, builderSource.length(), 0, "\n");
+
+				TextEdit text = ToolFactory.createCodeFormatter(null).format(
+						CodeFormatter.K_COMPILATION_UNIT, builderSource, 0,
+						builderSource.length(), 0, "\n");
 				// text is null if source cannot be formatted
 				if (text != null) {
 					Document simpleDocument = new Document(builderSource);
 					text.apply(simpleDocument);
 					buffer.setContents(simpleDocument.get());
-				} 
+				}
 			} else {
-				buffer.replace(pos, 0, sw.toString());	
+				buffer.replace(pos, 0, sw.toString());
+			}
+			
+			if (addValidation) {
+				addValidationImports(cu);
 			}
 		} catch (JavaModelException e) {
 			e.printStackTrace();
@@ -68,26 +77,38 @@ public class BuilderGenerator implements Generator {
 		}
 	}
 
-	private void createClassConstructor(PrintWriter pw, IType clazz, List<IField> fields) throws JavaModelException {
+	private void createClassConstructor(PrintWriter pw, IType clazz,
+			List<IField> fields, boolean addValidation)
+			throws JavaModelException {
 		String clazzName = clazz.getElementName();
 		pw.println("private " + clazzName + "(Builder builder){");
 		for (IField field : fields) {
-			pw.println("this." + getName(field) + "=builder." + getName(field) + ";");
+			pw.println("this." + getName(field) + "=builder." + getName(field)
+					+ ";");
 		}
+
+		if (addValidation) {
+			addClassValidation(pw, clazzName);
+		}
+
 		pw.println("}");
 	}
 
-	private void createClassBuilderConstructor(PrintWriter pw, IType clazz, List<IField> fields) {
+	private void createClassBuilderConstructor(PrintWriter pw, IType clazz,
+			List<IField> fields) {
 		String clazzName = clazz.getElementName();
 		pw.println("public " + clazzName + " build(){");
 		pw.println("return new " + clazzName + "(this);\n}");
 	}
 
-	private void createPrivateBuilderConstructor(PrintWriter pw, IType clazz, List<IField> fields) {
+	private void createPrivateBuilderConstructor(PrintWriter pw, IType clazz,
+			List<IField> fields) {
 		String clazzName = clazz.getElementName();
-		String clazzVariable = clazzName.substring(0, 1).toLowerCase() + clazzName.substring(1);
+		String clazzVariable = clazzName.substring(0, 1).toLowerCase()
+				+ clazzName.substring(1);
 		pw.println("public " + clazzName + " build(){");
-		pw.println(clazzName + " " + clazzVariable + "=new " + clazzName + "();");
+		pw.println(clazzName + " " + clazzVariable + "=new " + clazzName
+				+ "();");
 		for (IField field : fields) {
 			String name = getName(field);
 			pw.println(clazzVariable + "." + name + "=" + name + ";");
@@ -95,17 +116,39 @@ public class BuilderGenerator implements Generator {
 		pw.println("return " + clazzVariable + ";\n}");
 	}
 
-	private void createBuilderMethods(PrintWriter pw, List<IField> fields) throws JavaModelException {
+	private void addClassValidation(PrintWriter pw, String clazzName) {
+		pw.println();
+		pw.println("ValidatorFactory factory = Validation.buildDefaultValidatorFactory();");
+		pw.println("Set<ConstraintViolation<" + clazzName
+				+ ">> violations = factory.getValidator().validate(this);");
+		pw.println("if (violations.size() > 0) {");
+		pw.println("        ConstraintViolation<" + clazzName
+				+ "> firstViolation = violations.iterator().next();");
+		pw.println("        throw new IllegalArgumentException(firstViolation.getPropertyPath() + \" \" + firstViolation.getMessage());");
+		pw.println("}");
+	}
+	
+	private void addValidationImports(ICompilationUnit compilationUnit) throws JavaModelException {
+		compilationUnit.createImport("java.util.Set", null, null);
+		compilationUnit.createImport("javax.validation.ConstraintViolation", null, null);
+		compilationUnit.createImport("javax.validation.Validation", null, null);
+		compilationUnit.createImport("javax.validation.ValidatorFactory", null, null);
+	}
+
+	private void createBuilderMethods(PrintWriter pw, List<IField> fields)
+			throws JavaModelException {
 		for (IField field : fields) {
 			String name = getName(field);
 			String type = getType(field);
-			pw.println("public Builder " + name + "(" + type + " " + name + ") {");
+			pw.println("public Builder " + name + "(" + type + " " + name
+					+ ") {");
 			pw.println("this." + name + "=" + name + ";");
 			pw.println("return this;\n}");
 		}
 	}
 
-	private void createFieldDeclarations(PrintWriter pw, List<IField> fields) throws JavaModelException {
+	private void createFieldDeclarations(PrintWriter pw, List<IField> fields)
+			throws JavaModelException {
 		for (IField field : fields) {
 			pw.println("private " + getType(field) + " " + getName(field) + ";");
 		}
@@ -130,16 +173,15 @@ public class BuilderGenerator implements Generator {
 		List<IField> fields = new ArrayList<IField>();
 		try {
 			IType clazz = compilationUnit.getTypes()[0];
-			
-			for(IField field: clazz.getFields()) {
+
+			for (IField field : clazz.getFields()) {
 				int flags = field.getFlags();
-				boolean notFinal = !Flags.isFinal(flags);
 				boolean notStatic = !Flags.isStatic(flags);
-				if (notFinal && notStatic) {
+				if (notStatic) {
 					fields.add(field);
 				}
 			}
-			
+
 		} catch (JavaModelException e) {
 			e.printStackTrace();
 		}

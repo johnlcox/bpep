@@ -98,6 +98,10 @@ public class CreateDialog extends AbstractModalDialog {
         formatSourceButton.setSelection(true);
         formatSourceButton.setText("Format source (entire file)");
         
+        final Button addValidationButton = new Button(optionGroup, SWT.CHECK);
+        addValidationButton.setSelection(false);
+        addValidationButton.setText("Add jsr 303 validation");
+        
         final Button executeButton = new Button(shell, SWT.PUSH);
         executeButton.setText("Generate");
 //        GridData generateButtonGridData = new GridData();
@@ -121,7 +125,7 @@ public class CreateDialog extends AbstractModalDialog {
 						}
 					}
 
-        			generator.generate(compilationUnit, createBuilderConstructor.getSelection(), formatSourceButton.getSelection(), selectedFields);
+        			generator.generate(compilationUnit, createBuilderConstructor.getSelection(), formatSourceButton.getSelection(), selectedFields, addValidationButton.getSelection());
         			shell.dispose();
         		} else {
         			shell.dispose();
